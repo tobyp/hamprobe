@@ -1,0 +1,4 @@
+__pycache__/
+hamprobe-probe/hamprobe.conf
+hamprobe-coordinator/coordinator.conf
+hamprobe-prove/versions/

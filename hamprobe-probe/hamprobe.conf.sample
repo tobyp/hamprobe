@@ -1,0 +1,44 @@
+{
+	"config_version": "0",
+	"hamprobe": {
+		"id": "%PROBE_ID%",
+		"key": "%PROBE_KEY%"
+	},
+	"path": {
+		"probe": "/tmp/hamprobe_probe_cache.py"
+	},
+	"apis": {
+		"master": [
+			{"url": "http://api.hamprobe.net/api/master"}
+		],
+		"probe": [
+			{"url": "http://api.hamprobe.net/api/probe"}
+		]
+	},
+	"logging": {
+		"version": 1,
+		"formatters": {
+			"simple": {
+				"format": "%(asctime)s [%(name)s] (%(levelname)s) %(message)s",
+				"datefmt": "%y-%m-%dT%H:%M:%S"
+			}
+		},
+		"handlers": {
+			"console": {
+				"class": "logging.StreamHandler",
+				"level": "DEBUG",
+				"formatter": "simple",
+				"stream": "ext://sys.stderr"
+			}
+		},
+		"loggers": {
+			"hamprobe": {
+				"handlers": ["console"],
+				"level": "DEBUG"
+			}
+		}
+	},
+	"interval_status_report": 300,
+	"interval_backlog_flush": 3600,
+	"interval_update_check": 7200,
+}

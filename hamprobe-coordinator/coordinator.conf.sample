@@ -1,0 +1,7 @@
+{
+	"database": "mysql+mysqlconnector://user:password@localhost/hamnet",
+	"influx": ["localhost", 8086, "root", "root", "hamnet"],
+	"path": {
+		"probe": "../hamprobe-probe/versions/{}.py"
+	}
+}
