@@ -167,7 +167,6 @@ def main():
 	commands = {n.replace("command_", "", 1): v for n, v in globals().items() if n.startswith("command_")}
 	ap = argparse.ArgumentParser("HAMprobe Angel - Installer/Configurator/Updater")
 	ap.add_argument("--config", "-c", default=DEFAULT_CONFIG, help='Configuration file')
-	ap.add_argument("--no-updates", dest='updates', default=True, action='store_false')
 	ap.add_argument("command", choices=commands, default="run")
 	ap.add_argument("command_args", nargs=argparse.REMAINDER)
 	args = ap.parse_args()
