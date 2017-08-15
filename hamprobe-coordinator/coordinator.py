@@ -1,10 +1,11 @@
+import binascii
 import datetime
 import functools
+import hmac
 import ipaddress
 import json
 import logging
-import hmac
-from binascii import hexlify, unhexlify
+import os
 
 import influxdb
 from flask import Flask, Response, request, g, redirect, jsonify, abort
@@ -47,13 +48,13 @@ def restrict(internet=True, hamnet='hmac'):
 			remote = ipaddress.ip_address(request.remote_addr)
 			net = hamnet if remote in HAMNET_NETWORK else internet
 			if not net:
-				abort(403, "This resource may not be accessed from this network.")
+				abort(403, "This resource may not be accessed from the {}.".format("HAMNET" if remote in HAMNET_NETWORK else "INTERNET"))
 			elif net == 'hmac':
 				session = get_session()
 				request_probe_id = request.headers['X-Hamprobe-Id']
 				request_hmac = request.headers['X-Hamprobe-Hmac']
 				g.probe = session.query(db.Probe).filter(db.Probe.id == request_probe_id).one()
-				probe_key = unhexlify(g.probe.key)
+				probe_key = binascii.unhexlify(g.probe.key)
 				data = request.get_data()  # TODO limit length?
 				mac = hmac.new(probe_key, data, digestmod='sha256').hexdigest()
 				if request_hmac != mac:
@@ -142,23 +143,23 @@ def api(ops, logger):
 		logger.exception("API error")
 		return jsonify({"ret": "error", "error": "Remote error occurred."})
 
-# INSTALLER
+# KEYS
 
-# @app.route('/hamprobe_install.py')
-# @restrict(internet=True, hamnet=False)
-# def hamprobe():
-# 	probe_id = hexlify(os.urandom(16))  # TODO rate limit registration?
-# 	probe_key = hexlify(os.urandom(16))
-# 	created = datetime.datetime.now()
-# 	session = get_session()
-# 	probe = db.Probe(id=probe_id, key=probe_key, created=created)
-# 	session.add(probe)
-# 	session.commit()
+@app.route('/hamprobe.conf')
+@restrict(internet=True, hamnet=True)
+def hamprobe():
+	probe_id = binascii.hexlify(os.urandom(16)).decode('ascii')  # TODO rate limit registration?
+	probe_key = binascii.hexlify(os.urandom(16)).decode('ascii')
+	created = datetime.datetime.now()
+	session = get_session()
+	probe = db.Probe(id=probe_id, key=probe_key, created=created, target_script="default", target_policy="default")
+	session.add(probe)
+	session.commit()
 
-# 	with open(app.config['PROBE_INSTALLER_PATH'], 'r') as f:
-# 		install_script = f.read()
-# 	install_script = install_script.replace("%PROBE_ID%", probe_id, 1).replace("%PROBE_KEY%", probe_key, 1)
-# 	return Response(install_script, mimetype="text/plain", headers={"Content-disposition": "attachment; filename=hamprobe.py"})
+	with open(app.config['PROBE_CONFIG_PATH'], 'r') as f:
+		config = f.read()
+	config = config.replace("%PROBE_ID%", probe_id, 1).replace("%PROBE_KEY%", probe_key, 1)
+	return Response(config, mimetype="text/plain", headers={"Content-disposition": "attachment; filename=hamprobe.conf"})
 
 # INDEX
 

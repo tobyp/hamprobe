@@ -34,7 +34,7 @@
 		"loggers": {
 			"hamprobe": {
 				"handlers": ["console"],
-				"level": "DEBUG"
+				"level": "INFO"
 			}
 		}
 	},
