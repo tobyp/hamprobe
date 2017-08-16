@@ -1,4 +1,2 @@
 DATABASE = "mysql+mysqlconnector://user:password@localhost/hamnet"
 INFLUX =  ["localhost", 8086, "root", "root", "hamnet"]
-PROBE_VERSION_PATH = "../hamprobe-probe/versions/{}.py"
-PROBE_CONFIG_PATH = "../hamprobe-probe/hamprobe.conf.sample"

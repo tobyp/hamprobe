@@ -17,18 +17,16 @@ Zur Analyse der Eigenschaften dieses Netzes sollen Messproben verteilt, mit dies
 Die Software kann auf jedem unix-artigen System laufen, das Python 3 hat und ans HAMNET angeschlossen ist.
 Es werden root-Rechte benötigt, weil auf rohe ICMP sockets zugegriffen wird.
 
-### Mit Auto-Updater
+### Installer
 
- 1. Config-Datei mit eigener unique-ID und Key herunterladen <http://hamprobe.net/hamprobe.conf>
- 2. HAMprobe Master herunterladen <https://raw.githubusercontent.com/tobyp/hamprobe/master/hamprobe-probe/hamprobe_master.py>
- 3. Starten (am besten per init/rc.d/systemd): `sudo python3 hamprobe_master.py --config hamprobe.conf run` (Pfade anpassen)
+    wget "http://api.hamprobe.net/assets/hamprobe_install.sh" && chmod +x "./hamprobe_install.sh" && "./hamprobe_install.sh"
 
 ### Ohne Auto-Updater
 
- 1. Config-Datei mit eigener unique-ID und Key herunterladen <http://hamprobe.net/hamprobe.conf>
+ 1. Config-Datei laden <http://api.hamprobe.net/assets/hamprobe.conf> (wird jedes mal mit eigener unique-ID und Key generiert)
  2. In der Config `interval_update_check` auf 0 setzen
- 3. HAMprobe Probe herunterladen <https://raw.githubusercontent.com/tobyp/hamprobe/master/hamprobe-probe/hamprobe_probe.py>
- 4. Starten (am besten per init/rc.d/systemd): `sudo python3 hamprobe_probe.py --config hamprobe.conf` (Pfade anpassen)
+ 3. HAMprobe Probe herunterladen <http://api.hamprobe.net/assets/hamprobe_probe.py>
+ 4. Als root starten (am besten per init/rc.d/systemd): `hamprobe_probe.py --config hamprobe.conf` (Pfade anpassen)
 
 ### Troubleshooting
 

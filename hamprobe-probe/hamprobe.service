@@ -1,0 +1,8 @@
+[Unit]
+Description=HAMprobe
+
+[Service]
+ExecStart=/usr/local/bin/hamprobe_master.py --config /etc/hamprobe.conf run
+
+[Install]
+WantedBy=multi-user.target

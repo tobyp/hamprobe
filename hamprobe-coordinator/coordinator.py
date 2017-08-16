@@ -8,7 +8,7 @@ import logging
 import os
 
 import influxdb
-from flask import Flask, Response, request, g, redirect, jsonify, abort
+from flask import Flask, Response, request, g, redirect, jsonify, abort, send_file
 
 import db
 
@@ -72,7 +72,7 @@ def restrict(internet=True, hamnet='hmac'):
 
 def script(data):
 	if data["version"] != g.probe.target_script:
-		probe_path = app.config['PROBE_VERSION_PATH'].format(g.probe.target_script)
+		probe_path = os.path.join('../hamprobe-probe/versions/', g.probe.target_script + '.py')
 		with open(probe_path, 'r') as f:
 			return {"version": g.probe.target_script, "script": f.read()}
 	return {}
@@ -145,9 +145,9 @@ def api(ops, logger):
 
 # KEYS
 
-@app.route('/hamprobe.conf')
+@app.route('/assets/hamprobe.conf')
 @restrict(internet=True, hamnet=True)
-def hamprobe():
+def hamprobe_conf():
 	probe_id = binascii.hexlify(os.urandom(16)).decode('ascii')  # TODO rate limit registration?
 	probe_key = binascii.hexlify(os.urandom(16)).decode('ascii')
 	created = datetime.datetime.now()
@@ -156,10 +156,30 @@ def hamprobe():
 	session.add(probe)
 	session.commit()
 
-	with open(app.config['PROBE_CONFIG_PATH'], 'r') as f:
+	with open('../hamprobe-probe/hamprobe.conf.sample', 'r') as f:
 		config = f.read()
 	config = config.replace("%PROBE_ID%", probe_id, 1).replace("%PROBE_KEY%", probe_key, 1)
 	return Response(config, mimetype="text/plain", headers={"Content-disposition": "attachment; filename=hamprobe.conf"})
+
+@app.route('/assets/hamprobe_master.py')
+@restrict(internet=True, hamnet=True)
+def hamprobe_master():
+	return send_file('../hamprobe-probe/hamprobe_master.py', mimetype='text/x-python', as_attachment=True, attachment_filename="hamprobe_master.py")
+
+@app.route('/assets/hamprobe_probe.py')
+@restrict(internet=True, hamnet=True)
+def hamprobe_probe():
+	return send_file('../hamprobe-probe/hamprobe_probe.py', mimetype='text/x-python', as_attachment=True, attachment_filename="hamprobe_probe.py")
+
+@app.route('/assets/hamprobe.service')
+@restrict(internet=True, hamnet=True)
+def hamprobe_service():
+	return send_file('../hamprobe-probe/hamprobe.service', mimetype='text/plain', as_attachment=True, attachment_filename="hamprobe.service")
+
+@app.route('/assets/hamprobe_install.sh')
+@restrict(internet=True, hamnet=True)
+def hamprobe_install():
+	return send_file('../hamprobe-probe/hamprobe_install.sh', mimetype='text/x-shellscript', as_attachment=True, attachment_filename="hamprobe_install.sh")
 
 # INDEX
 
