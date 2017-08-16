@@ -9,6 +9,7 @@ __version__ = "0"
 import atexit
 import binascii
 import errno
+import hashlib
 import hmac
 import http.client
 import json
@@ -28,13 +29,13 @@ class API:
 		self.logger = logger
 		self.version = version
 		self.probe_id = config["hamprobe"]["id"]
-		self.probe_key = binascii.unhexlify(config["hamprobe"]["key"])
+		self.probe_key = binascii.unhexlify(config["hamprobe"]["key"].encode('utf-8'))
 		self.apis = config["apis"][api_name]
 
 	def request(self, op, data=None):
 		req = {"v": self.version, "op": op, "data": data or {}}
 		body = json.dumps(req).encode('utf-8')
-		mac = hmac.new(self.probe_key, body, digestmod='sha256').hexdigest()
+		mac = hmac.new(self.probe_key, body, digestmod=hashlib.sha256).hexdigest()
 		for api in self.apis:
 			url = urllib.parse.urlparse(api["url"])
 			resp = None
@@ -61,7 +62,7 @@ class API:
 			if resp.status != 200:
 				raise RuntimeError("HTTP error: {} {}".format(resp.status, resp.code))
 			rbody = resp.read()
-			rbody_mac = hmac.new(self.probe_key, rbody, digestmod='sha256').hexdigest()
+			rbody_mac = hmac.new(self.probe_key, rbody, digestmod=hashlib.sha256).hexdigest()
 			if resp.getheader('X-Hamprobe-Hmac') != rbody_mac:
 				raise RuntimeError("HMAC mismatch")
 			rdata = json.loads(rbody.decode('utf-8'))
@@ -151,7 +152,12 @@ def command_run(pargs, cargs):
 				probe_subproc = subprocess.Popen([sys.executable, probe_script_path, '--config', pargs.config])
 
 			try:
-				probe_subproc.wait(interval_update)
+				# Versions 3.2 and lower are not capable of passing a timeout argument
+				if sys.version_info <= (3,3):
+					probe_subproc.wait()
+				else:
+					probe_subproc.wait(interval_update)
+
 				logger.info("probe exited by itself.")
 			except subprocess.TimeoutExpired:  # time to update again
 				continue

@@ -11,8 +11,16 @@ chmod 744 "/usr/local/bin/hamprobe_master.py"
 wget -O "/etc/hamprobe.conf" "http://api.hamprobe.net/assets/hamprobe.conf"
 chmod 600 "/etc/hamprobe.conf"
 
-wget -O "/etc/systemd/system/hamprobe.service" "http://api.hamprobe.net/assets/hamprobe.service"
+if pidof systemd > /dev/null; then
+	# Systemd
+	wget -O "/etc/systemd/system/hamprobe.service" "http://api.hamprobe.net/assets/hamprobe.service"
+	systemctl daemon-reload
+	systemctl enable hamprobe
+	systemctl start hamprobe
 
-systemctl daemon-reload
-systemctl enable hamprobe
-systemctl start hamprobe
+else
+	# SysVInit
+	wget -O "/etc/init.d/hamprobe" "http://api.hamprobe.net/assets/hamprobe.init"
+	update-rc.d hamprobe defaults
+	/etc/init.d/hamprobe start
+fi
