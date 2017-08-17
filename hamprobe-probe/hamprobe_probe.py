@@ -282,7 +282,7 @@ class HAMprobe:
 		for i, test_config in enumerate(policy.get('tests', [])):
 			try:
 				test = Test(self, policy_id, i, test_config)
-				test.sched_handle = self.sched.enter(test.delay, 0, test.run)
+				test.sched_handle = self.sched.enter(test.delay, 0, test.run, ())
 				self.tests.add(test)
 				logger.debug("Scheduled test {!r} in {} s, repeating every {} s".format(test.name, test.delay, test.repeat))
 			except:
