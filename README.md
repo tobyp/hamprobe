@@ -17,11 +17,15 @@ Zur Analyse der Eigenschaften dieses Netzes sollen Messproben verteilt, mit dies
 Die Software kann auf jedem unix-artigen System laufen, das Python 3 hat und ans HAMNET angeschlossen ist.
 Es werden root-Rechte benötigt, weil auf rohe ICMP sockets zugegriffen wird.
 
-### Installer
+__*Die Software enthält einen optionalen Auto-Updater, damit Paketverlust- und Bandbreitentests nachgeliefert werden können.*__
+
+### Installation mit Auto-Updater
 
     wget "http://api.hamprobe.net/assets/hamprobe_install.sh" && chmod +x "./hamprobe_install.sh" && "./hamprobe_install.sh"
 
-### Ohne Auto-Updater
+### Installation ohne Auto-Updater
+
+Bald kann der Installer auch ohne Auto-Updater installieren. Bis dahin sind folgende Schritte notwendig:
 
  1. Config-Datei laden <http://api.hamprobe.net/assets/hamprobe.conf> (wird jedes mal mit eigener unique-ID und Key generiert)
  2. In der Config `interval_update_check` auf 0 setzen
