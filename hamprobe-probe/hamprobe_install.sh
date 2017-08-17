@@ -21,6 +21,7 @@ if pidof systemd > /dev/null; then
 else
 	# SysVInit
 	wget -O "/etc/init.d/hamprobe" "http://api.hamprobe.net/assets/hamprobe.init"
+	chmod +x "/etc/init.d/hamprobe"
 	update-rc.d hamprobe defaults
 	/etc/init.d/hamprobe start
 fi
