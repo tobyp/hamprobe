@@ -21,6 +21,8 @@ app = Flask(__name__)
 app.config.from_envvar('COORDINATOR_CONFIG')
 logging.config.dictConfig(app.config['LOGGING'])
 
+logger = logging.getLogger('hamprobe.coord')
+
 def get_session():
 	if not hasattr(g, 'db'):
 		engine = db.get_engine(app.config)
@@ -84,8 +86,7 @@ master_ops = {'script': script}
 # PROBE
 
 def publish(data):
-	logger = logging.getLogger('hamprobe.coord')
-	logger.info("publish from {} / {}".format(g.probe.id, request.remote_addr))
+	logger.debug("publish from {} / {}".format(g.probe.id, request.remote_addr))
 	influx = get_influx()
 	result = data['result']
 	if data['test'] == 'traceroute':
@@ -120,10 +121,11 @@ def policy(data):
 	return {"id": g.probe.target_policy, "policy": policy}
 
 def status(data):
+	logger.info("status from {} / {} (target_policy {})".format(g.probe.id, request.remote_addr, g.probe.target_policy))
 	return {'policy': g.probe.target_policy, 'script': g.probe.target_script}
 
 def error(data):
-	print(data)
+	logger.error("error from {} / {}: {}".format(g.probe.id, request.remote_addr, data))
 	return {}
 
 probe_ops = {'status': status, 'publish': publish, 'policy': policy, 'error': error}
