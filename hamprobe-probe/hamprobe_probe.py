@@ -5,7 +5,7 @@ https://hamprobe.informatik.hs-augsburg.de
 (c) 2017 Tobias Peter DB1QP <tobias.peter@hs-augsburg.de>
 THIS SCRIPT SHOULD NOT BE CALLED MANUALLY, BUT BY hamprobe_master.py !!!'''
 
-__version__ = 'default'
+__version__ = '%PROBE_VERSION%'
 
 import atexit
 import binascii

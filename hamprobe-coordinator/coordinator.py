@@ -176,6 +176,11 @@ def hamprobe_probe():
 def hamprobe_service():
 	return send_file('../hamprobe-probe/hamprobe.service', mimetype='text/plain', as_attachment=True, attachment_filename="hamprobe.service")
 
+@app.route('/assets/hamprobe.init')
+@restrict(internet=True, hamnet=True)
+def hamprobe_init():
+	return send_file('../hamprobe-probe/hamprobe.init', mimetype='text/x-shellscript', as_attachment=True, attachment_filename="hamprobe.init")
+
 @app.route('/assets/hamprobe_install.sh')
 @restrict(internet=True, hamnet=True)
 def hamprobe_install():
