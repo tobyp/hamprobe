@@ -62,6 +62,7 @@ def traceroute(target, distance, timeout=5):
 		except:
 			pass
 
+		icmp = None
 		if ping_reply is not None:
 			hop["hop"] = addr[0]
 			hop["src"] = socket.inet_ntop(socket.AF_INET, ping_reply[16:20])
@@ -72,7 +73,7 @@ def traceroute(target, distance, timeout=5):
 
 		trace.append(hop)
 
-		if icmp[0] == ICMP_ECHO_REPLY:
+		if icmp is not None and icmp[0] == ICMP_ECHO_REPLY:
 			break
 
 	return trace
