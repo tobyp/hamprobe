@@ -3,12 +3,12 @@ import datetime
 import functools
 import hmac
 import ipaddress
-import json
 import logging
 import os
 
-import influxdb
 from flask import Flask, Response, request, g, redirect, jsonify, abort, send_file
+import influxdb
+import yaml
 
 import db
 
@@ -82,6 +82,8 @@ master_ops = {'script': script}
 # PROBE
 
 def publish(data):
+	logger = logging.getLogger('publish')
+	logger.info("Probe {} from {}".format(g.probe.id, request.remote_addr))
 	influx = get_influx()
 	result = data['result']
 	if data['test'] == 'traceroute':
@@ -110,9 +112,10 @@ def publish(data):
 		print(data)
 
 def policy(data):
-	policy_obj = get_session().query(db.Policy).filter(db.Policy.id == g.probe.target_policy).one()
-	policy = json.loads(policy_obj.policy)
-	return {"id": policy_obj.id, "policy": policy}
+	policy_path = os.path.join('policies/', g.probe.target_policy + ".yml")
+	with open(policy_path, 'r') as f:
+		policy = yaml.load(f)
+	return {"id": g.probe.target_policy, "policy": policy}
 
 def status(data):
 	return {'policy': g.probe.target_policy, 'script': g.probe.target_script}
