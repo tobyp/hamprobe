@@ -4,6 +4,7 @@ import functools
 import hmac
 import ipaddress
 import logging
+import logging.config
 import os
 
 from flask import Flask, Response, request, g, redirect, jsonify, abort, send_file
@@ -18,6 +19,7 @@ HAMNET_NETWORK = ipaddress.ip_network('44.0.0.0/8')
 
 app = Flask(__name__)
 app.config.from_envvar('COORDINATOR_CONFIG')
+logging.config.dictConfig(app.config['LOGGING'])
 
 def get_session():
 	if not hasattr(g, 'db'):
@@ -82,8 +84,8 @@ master_ops = {'script': script}
 # PROBE
 
 def publish(data):
-	logger = logging.getLogger('publish')
-	logger.info("Probe {} from {}".format(g.probe.id, request.remote_addr))
+	logger = logging.getLogger('hamprobe.coord')
+	logger.info("publish from {} / {}".format(g.probe.id, request.remote_addr))
 	influx = get_influx()
 	result = data['result']
 	if data['test'] == 'traceroute':
