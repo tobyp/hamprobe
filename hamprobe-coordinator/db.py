@@ -1,3 +1,5 @@
+import datetime
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.engine import Engine
@@ -77,12 +79,6 @@ class Probe(Base):
 	created = Column(DateTime, nullable=False)
 	target_script = Column(String(64), nullable=False)
 	target_policy = Column(String(64), nullable=False)
-
-
-class Policy(Base):
-	__tablename__ = 'hamprobe_policy'
-	id = Column(String(64), primary_key=True)
-	policy = Column(Text)
 
 
 def get_engine(config):
