@@ -114,15 +114,9 @@ class API:
 					'Content-Type': 'application/json',
 					'Content-Encoding': 'utf-8'})
 				resp = conn.getresponse()
-			except (OSError, http.client.BadStatusLine) as e:
-				if isinstance(e, ConnectionError) or isinstance(e, OSError) and e.errno in {errno.EHOSTDOWN, errno.EHOSTUNREACH, errno.ENETDOWN, errno.ENETUNREACH}:
-					self.logger.debug("Failed to connect to api at {}, trying next option.".format(api['url']))
-					continue
-				elif isinstance(e, http.client.BadStatusLine):
-					self.logger.debug("Failed to connect to api at {}, trying next option.".format(api['url']))
-					continue
-				else:
-					raise
+			except (OSError, http.client.BadStatusLine, socket.gaierror):
+				self.logger.debug("Failed to connect to api at {}, trying next option.".format(api['url']))
+				continue
 
 			if resp.status == 503:
 				raise ConnectionError("Broken Gateway")
