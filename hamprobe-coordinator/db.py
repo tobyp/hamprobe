@@ -79,6 +79,8 @@ class Probe(Base):
 	created = Column(DateTime, nullable=False)
 	target_script = Column(String(64), nullable=False)
 	target_policy = Column(String(64), nullable=False)
+	last_status = Column(DateTime, nullable=True)
+	last_ip = Column(String(42), nullable=True)
 
 
 def get_engine(config):

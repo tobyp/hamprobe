@@ -5,11 +5,20 @@ if [ ! "$EUID" -eq "0" ]; then
 	exit 1;
 fi
 
+if pidof systemd > /dev/null; then
+	systemctl is-active hamprobe && systemctl stop hamprobe;
+else
+	[ -f "/etc/init.d/hamprobe" ] && /etc/init.d/hamprobe stop;
+fi
+
 wget -O "/usr/local/bin/hamprobe_master.py" "http://api.hamprobe.net/assets/hamprobe_master.py"
 chmod 744 "/usr/local/bin/hamprobe_master.py"
 
-wget -O "/etc/hamprobe.conf" "http://api.hamprobe.net/assets/hamprobe.conf"
-chmod 600 "/etc/hamprobe.conf"
+# Don't overwrite existing config (updating config format should be handled in hamprobe_probe)
+if [ ! -f "/etc/hamprobe.conf" ]; then
+	wget -O "/etc/hamprobe.conf" "http://api.hamprobe.net/assets/hamprobe.conf"
+	chmod 600 "/etc/hamprobe.conf"
+fi
 
 if pidof systemd > /dev/null; then
 	# Systemd

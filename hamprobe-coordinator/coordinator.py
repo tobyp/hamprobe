@@ -122,6 +122,11 @@ def policy(data):
 
 def status(data):
 	logger.info("status from {} / {} (target_policy {})".format(g.probe.id, request.remote_addr, g.probe.target_policy))
+	session = get_session()
+	g.probe.last_status = datetime.datetime.now()
+	g.probe.last_ip = request.remote_addr
+	session.save(g.probe)
+	session.commit()
 	return {'policy': g.probe.target_policy, 'script': g.probe.target_script}
 
 def error(data):
