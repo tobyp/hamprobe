@@ -1,16 +1,18 @@
-#!/bin/sh
+#!/bin/bash
 
-if [ ! "$EUID" -eq "0" ]; then
+if [ "$EUID" -ne "0" ]; then
 	echo "This script must be run as root."
 	exit 1;
 fi
 
-if pidof systemd > /dev/null; then
-	systemctl is-active hamprobe && systemctl stop hamprobe;
+# Stop if running
+if which systemctl >/dev/null; then
+	systemctl is-active hamprobe && systemctl stop hamprobe
 else
-	[ -f "/etc/init.d/hamprobe" ] && /etc/init.d/hamprobe stop;
+	[ -f "/etc/init.d/hamprobe" ] && /etc/init.d/hamprobe stop
 fi
 
+# Install latest master
 wget -O "/usr/local/bin/hamprobe_master.py" "http://api.hamprobe.net/assets/hamprobe_master.py"
 chmod 744 "/usr/local/bin/hamprobe_master.py"
 
@@ -20,7 +22,8 @@ if [ ! -f "/etc/hamprobe.conf" ]; then
 	chmod 600 "/etc/hamprobe.conf"
 fi
 
-if pidof systemd > /dev/null; then
+# Start 
+if which systemctl >/dev/null; then
 	# Systemd
 	wget -O "/etc/systemd/system/hamprobe.service" "http://api.hamprobe.net/assets/hamprobe.service"
 	systemctl daemon-reload

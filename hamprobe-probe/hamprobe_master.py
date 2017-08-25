@@ -25,6 +25,9 @@ import urllib.parse
 DEFAULT_CONFIG = "/etc/hamprobe.conf"
 
 
+class APIError(Exception):
+	pass
+
 class API:
 	def __init__(self, logger, version, config, api_name):
 		self.logger = logger
@@ -48,24 +51,23 @@ class API:
 					'Content-Type': 'application/json',
 					'Content-Encoding': 'utf-8'})
 				resp = conn.getresponse()
-			except (OSError, http.client.BadStatusLine, socket.gaierror):
+			except (OSError, http.client.BadStatusLine, socket.gaierror, socket.error):
 				self.logger.debug("Failed to connect to api at {}, trying next option.".format(api['url']))
 				continue
 
-			if resp.status == 503:
-				raise ConnectionError("Broken Gateway")
 			if resp.status != 200:
-				raise RuntimeError("HTTP error: {} {}".format(resp.status, resp.code))
+				raise APIError("HTTP error: {} {}".format(resp.status, resp.code))
 			rbody = resp.read()
 			rbody_mac = hmac.new(self.probe_key, rbody, digestmod=hashlib.sha256).hexdigest()
 			if resp.getheader('X-Hamprobe-Hmac') != rbody_mac:
-				raise RuntimeError("HMAC mismatch")
+				raise APIError("HMAC mismatch")
 			rdata = json.loads(rbody.decode('utf-8'))
 			if rdata.get('ret', None) != 'ok':
-				raise RuntimeError("API returned an error: {}".format(rdata))
+				raise APIError("API returned an error: {}".format(rdata))
 			return rdata.get('resp', None)
 		else:
-			raise ConnectionError("Failed to connect to API")
+			raise APIError("Failed to connect to API")
+
 
 def fetch_script(logger, api, current_version):
 	try:
@@ -75,10 +77,73 @@ def fetch_script(logger, api, current_version):
 			new_script = response['script'].replace('%PROBE_VERSION%', new_version, 1)
 			logger.debug("New version available: {}".format(new_version))
 			return new_version, new_script
-	except ConnectionError:
+	except APIError:
 		logger.info("Failed to check for updates, keep using the old one.")
 
 	return current_version, None
+
+class Probe:
+	def __init__(self, logger, probe_path, config_path):
+		self.logger = logger
+		self.probe_path = probe_path
+		self.config_path = config_path
+		self.version = self._read_version()
+		self._probe_process = None
+
+	def __del__(self):
+		self.stop()
+
+	@property
+	def running(self):
+		if self._probe_process is None:
+			return False
+		if self._probe_process.poll() is None:
+			return True
+		self._probe_process = None
+		return False
+
+	def start(self):
+		if self.running:
+			return
+		self.logger.info("Starting version {!r}".format(self.version))
+		self._probe_process = subprocess.Popen([sys.executable, self.probe_path, '--config', self.config_path])
+
+	def run(self):
+		if self.running:
+			raise RuntimeError("Already running")
+		self.start()
+		self._probe_process.wait()
+		self.logger.info("Probe exited.")
+
+	def stop(self):
+		if not self.running:
+			return
+		self.logger.info("Terminating probe.")
+		self._probe_process.terminate()
+		self._probe_process = None
+
+	def update(self, api):
+		'''returns whether a runnable script is present.'''
+		try:
+			response = api.request('script', {'version': self.version})
+			version = response['version']
+			script = response['script'].replace('%PROBE_VERSION%', version)
+			self.logger.debug("Updating from version {!r} to {!r}".format(self.version, version))
+			try:
+				with open(self.probe_path, 'w') as f:
+					f.write(script)
+				self.version = version
+			except:
+				pass
+		except APIError:
+			self.logger.info("Failed to check for updates.")
+
+	def _read_version(self):
+		try:
+			with open(self.probe_path, 'r') as f:
+				return f.read().split("__version__ = '", 1)[1].split("'\n", 1)[0]
+		except:
+			return None
 
 
 def command_run(pargs, cargs):
@@ -89,75 +154,21 @@ def command_run(pargs, cargs):
 	logger = logging.getLogger('hamprobe.master')
 
 	api = API(logger.getChild('api'), __version__, config, 'master')
-	probe_script_path = config["path"]["probe"]
-	interval_update = int(config.get("interval_update_check", 0))
-	if interval_update <= 0:
-		interval_update = None
+	probe = Probe(logger, config["path"]["probe"], pargs.config)
+	atexit.register(probe.stop)
 
-	probe_version = None
 	try:
-		with open(probe_script_path, 'r') as f:
-			probe_version = f.read().split("__version__ = '", 1)[1].split("'\n", 1)[0]
-	except:
-		pass
-
-	probe_subproc = None
-
-	def exit_handler():
-		nonlocal probe_subproc
-		if probe_subproc is not None:
-			try:
-				probe_subproc.terminate()
-			except:
-				pass
-			finally:
-				probe_subproc = None
-	atexit.register(exit_handler)
-
-	while True:
-		# 1. get script if we need to
-		if interval_update is not None or probe_version is None:
-			if probe_version is None:
-				logger.info("Fetching worker script (just on first run)")
+		while True:
+			probe.update(api)
+			if probe.version is not None:
+				probe.run()
 			else:
-				logger.debug("Checking for updates")
-
-			probe_version, probe_script = fetch_script(logger, api, probe_version)
-			if probe_script is not None:  # we have an update
-				logger.debug("Installing new version {!r}".format(probe_version))
-				# Terminate the old one so we can update the script (it will flush backlog on SIGTERM)
-				if probe_subproc is not None:
-					try:
-						probe_subproc.terminate()
-					except:
-						pass
-					finally:
-						probe_subproc = None
-				# Write new script
-				with open(probe_script_path, 'w') as f:
-					f.write(probe_script)
-
-		# 2. Run it if we can
-		if probe_version is None:
-			logger.info("No script installed and failed to fetch one; waiting one update interval to try again")
-			time.sleep(interval_update)
-		else:
-			if probe_subproc is None:
-				logger.info("Starting probe {}.".format(probe_version))
-				probe_subproc = subprocess.Popen([sys.executable, probe_script_path, '--config', pargs.config])
-
-			try:
-				# Versions 3.2 and lower are not capable of passing a timeout argument
-				if sys.version_info <= (3,3):
-					probe_subproc.wait()
-				else:
-					probe_subproc.wait(interval_update)
-
-				logger.info("probe exited by itself.")
-			except subprocess.TimeoutExpired:  # time to update again
-				continue
-			except (KeyboardInterrupt, SystemExit):
-				return
+				logger.info("No script installed and failed to fetch one; waiting a while before trying again")
+				time.sleep(int(config.get("interval_status_report", 3600)))
+	except (KeyboardInterrupt, SystemExit):
+		pass
+	finally:
+		probe.stop()
 
 
 def main():

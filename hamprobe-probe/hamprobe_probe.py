@@ -43,6 +43,7 @@ def traceroute(target, distance, timeout=5):
 	sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('ll', timeout, 0))
 
 	trace = []
+	target = socket.gethostbyname(target)
 
 	identifier = random.randint(0, 1 << 15)
 	for i in range(distance):
@@ -91,6 +92,9 @@ def test_traceroute(probe, params):
 	return results
 
 
+class APIError(Exception):
+	pass
+
 class API:
 	def __init__(self, logger, version, config, api_name):
 		self.logger = logger
@@ -114,24 +118,22 @@ class API:
 					'Content-Type': 'application/json',
 					'Content-Encoding': 'utf-8'})
 				resp = conn.getresponse()
-			except (OSError, http.client.BadStatusLine, socket.gaierror):
+			except (OSError, http.client.BadStatusLine, socket.gaierror, socket.error):
 				self.logger.debug("Failed to connect to api at {}, trying next option.".format(api['url']))
 				continue
 
-			if resp.status == 503:
-				raise ConnectionError("Broken Gateway")
 			if resp.status != 200:
-				raise RuntimeError("HTTP error: {} {}".format(resp.status, resp.code))
+				raise APIError("HTTP error: {} {}".format(resp.status, resp.code))
 			rbody = resp.read()
 			rbody_mac = hmac.new(self.probe_key, rbody, digestmod=hashlib.sha256).hexdigest()
 			if resp.getheader('X-Hamprobe-Hmac') != rbody_mac:
-				raise RuntimeError("HMAC mismatch")
+				raise APIError("HMAC mismatch")
 			rdata = json.loads(rbody.decode('utf-8'))
 			if rdata.get('ret', None) != 'ok':
-				raise RuntimeError("API returned an error: {}".format(rdata))
+				raise APIError("API returned an error: {}".format(rdata))
 			return rdata.get('resp', None)
 		else:
-			raise ConnectionError("Failed to connect to API")
+			raise APIError("Failed to connect to API")
 
 
 class Test:
@@ -165,13 +167,13 @@ class Test:
 
 
 class HAMprobe:
-	def __init__(self, config):
+	def __init__(self, config, under_updater=True):
 		self.logger = logging.getLogger('hamprobe')
+		self.under_updater = under_updater
 		self.api = API(self.logger.getChild('api'), __version__, config, 'probe')
 		self.sched = sched.scheduler(time.time, time.sleep)
 		self.tests = set()
 		self.policy = None
-		self.does_updates = int(config.get("interval_update_check", 0)) > 0
 		self.interval_status_report = int(config.get("interval_status_report", 300))
 		self.interval_backlog_flush = int(config.get("interval_backlog_flush", 3600))
 		self.backlog_limit = int(config.get("backlog_limit", 1000))
@@ -213,9 +215,9 @@ class HAMprobe:
 				request, payload = self.backlog.pop(0)
 				try:
 					self.api.request(request, payload)
-				except ConnectionError:
+				except APIError:
 					self.backlog.insert(0, (request, payload))
-					self.logger.debug("Failed to ")
+					self.logger.debug("Failed to flush backlog, trying again later")
 					break
 		finally:
 			self.sched.enter(self.interval_backlog_flush, 0, self.backlog_flush)
@@ -230,7 +232,7 @@ class HAMprobe:
 		msg = {"test": test.test, "policy": test.policy, "index": test.index, "result": result}
 		try:
 			self.api.request('publish', msg)
-		except ConnectionError:
+		except APIError:
 			self.logger.warning("Failed to publish, backlogging")
 			self.backlog_append('publish', msg)
 
@@ -239,18 +241,17 @@ class HAMprobe:
 		msg = {"test": test.test, "policy": test.policy, "index": test.index, "error": str(error)}
 		try:
 			self.api.request('error', msg)
-		except ConnectionError:
-			self.logger.warning("Failed to error, backlogging")
+		except APIError:
+			self.logger.warning("Failed to send error details, backlogging")
 			self.backlog_append('error', msg)
 
 	def status_report(self):
-		'''Fetch an updated policy and reconfigure test tasks to reflect it'''
 		logger = self.logger.getChild('status')
 		try:
 			logger.debug("Reporting status")
 			response = self.api.request('status', {'policy': self.policy})
 
-			if self.does_updates and response['script'] != __version__:
+			if response['script'] != __version__ and self.under_updater:
 				sys.exit(0)  #exit so master can update
 
 			if response['policy'] != self.policy:

@@ -75,11 +75,9 @@ def restrict(internet=True, hamnet='hmac'):
 # MASTER
 
 def script(data):
-	if data["version"] != g.probe.target_script:
-		probe_path = os.path.join('../hamprobe-probe/versions/', g.probe.target_script + '.py')
-		with open(probe_path, 'r') as f:
-			return {"version": g.probe.target_script, "script": f.read()}
-	return {}
+	probe_path = os.path.join('../hamprobe-probe/versions/', g.probe.target_script + '.py')
+	with open(probe_path, 'r') as f:
+		return {"version": g.probe.target_script, "script": f.read()}
 
 master_ops = {'script': script}
 
@@ -106,10 +104,10 @@ def publish(data):
 						"fields": {
 							"t": hop['delay']
 						}}
-				if "icmp" in hop:
-					p['tags']['icmp_type'] = hop['icmp'][0]
-					p['tags']['icmp_code'] = hop['icmp'][1]
-				points.append(p)
+					if "icmp" in hop:
+						p['tags']['icmp_type'] = hop['icmp'][0]
+						p['tags']['icmp_code'] = hop['icmp'][1]
+					points.append(p)
 		influx.write_points(points)
 	else:
 		print(data)
@@ -125,7 +123,7 @@ def status(data):
 	session = get_session()
 	g.probe.last_status = datetime.datetime.now()
 	g.probe.last_ip = request.remote_addr
-	session.save(g.probe)
+	session.add(g.probe)
 	session.commit()
 	return {'policy': g.probe.target_policy, 'script': g.probe.target_script}
 
