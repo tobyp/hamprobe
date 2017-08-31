@@ -7,7 +7,6 @@ THIS SCRIPT SHOULD NOT BE CALLED MANUALLY, BUT BY hamprobe_master.py !!!'''
 
 __version__ = '%PROBE_VERSION%'
 
-import atexit
 import binascii
 import errno
 import hashlib
@@ -18,10 +17,12 @@ import logging
 import logging.config
 import random
 import sched
+import signal
 import socket
 import struct
 import sys
 import time
+
 import urllib.parse
 
 if sys.version_info < (3, 3):
@@ -156,9 +157,15 @@ class Test:
 		self.logger = logging.getLogger('hamprobe.test.'+self.name)
 		self.sched_handle = None
 
+	def cancel(self):
+		if self.sched_handle is not None:
+			self.probe.sched.cancel(self.sched_handle)
+			self.sched_handle = None
+
 	def run(self):
 		self.logger.debug("starting")
 		try:
+			self.sched_handle = None
 			result = self.func(self.logger, self.params)
 			self.logger.debug("succeeded, rescheduling")
 			self.sched_handle = self.probe.sched.enter(self.repeat, 0, self.run, ())
@@ -166,7 +173,6 @@ class Test:
 		except Exception as ex:
 			self.logger.debug("failed, not rescheduling")
 			self.probe.report_error(self, ex)
-			raise
 
 
 class HAMprobe:
@@ -182,26 +188,22 @@ class HAMprobe:
 		self.backlog_limit = int(config.get("backlog_limit", 1000))
 		self.sched.enter(0, 0, self.status_report, ())
 		self.sched.enter(self.interval_backlog_flush, 0, self.backlog_flush, ())
-		# TODO load backlog from file
 		self.backlog = []
-		atexit.register(self.exit_handler)
+		# TODO load backlog from file
 
-	def exit_handler(self):
-		self.logger.info("Termination requested, trying a backlog flush")
-		# TODO write backlog to file
+	def exit(self):
+		self.logger.info("Termination requested, cancelling all tests and trying a backlog flush")
+		self.cancel_all_tests()
 		self.backlog_flush()
+		# TODO write remaining backlog to file
 
 	def cancel(self, test):
-		if test.sched_handle is not None:
-			self.sched.cancel(test.sched_handle)
-			test.sched_handle = None
+		test.cancel()
 		self.tests.discard(test.sched_handle)
 
 	def cancel_all_tests(self):
 		for test in self.tests:
-			if test.sched_handle is not None:
-				self.sched.cancel(test.sched_handle)
-				test.sched_handle = None
+			test.cancel()
 		self.tests.clear()
 
 	def run(self):
@@ -255,7 +257,8 @@ class HAMprobe:
 			response = self.api.request('status', {'policy': self.policy})
 
 			if response['script'] != __version__ and self.under_updater:
-				sys.exit(0)  #exit so master can update
+				logger.info("New version available, requesting termination to update")
+				raise SystemExit()
 
 			if response['policy'] != self.policy:
 				self.update_policy()
@@ -291,7 +294,14 @@ class HAMprobe:
 		self.policy = policy_id
 
 def main():
+	def signal_exit(signal, frame):
+		raise SystemExit(-signal)
+	signal.signal(signal.SIGHUP, signal_exit)
+	signal.signal(signal.SIGINT, signal_exit)
+	signal.signal(signal.SIGTERM, signal_exit)
+
 	import argparse
+
 	ap = argparse.ArgumentParser()
 	ap.add_argument("--config", help='Configuration file.')
 	args = ap.parse_args()
@@ -309,8 +319,10 @@ def main():
 		raise RuntimeError("Configuration still has placeholder PROBE_ID and PROBE_KEY. Please download hamprobe.py from https://hamprobe.informatik.hs-augsburg.de/hamprobe.py (The file will include a unique key), and run that to regenerate the config.")
 
 	probe = HAMprobe(config)
-	probe.run()
-
+	try:
+		probe.run()
+	finally:
+		probe.exit()
 
 if __name__ == '__main__':
-	main()
+	sys.exit(main())

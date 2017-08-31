@@ -6,7 +6,6 @@ https://hamprobe.informatik.hs-augsburg.de
 
 __version__ = "0"
 
-import atexit
 import binascii
 import errno
 import hashlib
@@ -16,6 +15,7 @@ import json
 import logging
 import logging.config
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -123,18 +123,18 @@ class Probe:
 		self._probe_process = None
 
 	def update(self, api):
-		'''returns whether a runnable script is present.'''
 		try:
 			response = api.request('script', {'version': self.version})
 			version = response['version']
-			script = response['script'].replace('%PROBE_VERSION%', version)
-			self.logger.debug("Updating from version {!r} to {!r}".format(self.version, version))
-			try:
-				with open(self.probe_path, 'w') as f:
-					f.write(script)
-				self.version = version
-			except:
-				pass
+			if version != self.version:
+				script = response['script'].replace('%PROBE_VERSION%', version)
+				self.logger.debug("Updating from version {!r} to {!r}".format(self.version, version))
+				try:
+					with open(self.probe_path, 'w') as f:
+						f.write(script)
+					self.version = version
+				except:
+					pass
 		except APIError:
 			self.logger.info("Failed to check for updates.")
 
@@ -155,7 +155,6 @@ def command_run(pargs, cargs):
 
 	api = API(logger.getChild('api'), __version__, config, 'master')
 	probe = Probe(logger, config["path"]["probe"], pargs.config)
-	atexit.register(probe.stop)
 
 	try:
 		while True:
@@ -165,13 +164,17 @@ def command_run(pargs, cargs):
 			else:
 				logger.info("No script installed and failed to fetch one; waiting a while before trying again")
 				time.sleep(int(config.get("interval_status_report", 3600)))
-	except (KeyboardInterrupt, SystemExit):
-		pass
 	finally:
 		probe.stop()
 
 
 def main():
+	def signal_exit(signal, frame):
+		raise SystemExit(-signal)
+	signal.signal(signal.SIGHUP, signal_exit)
+	signal.signal(signal.SIGINT, signal_exit)
+	signal.signal(signal.SIGTERM, signal_exit)
+
 	print(__import__(__name__).__doc__)
 	import argparse
 	import sys
