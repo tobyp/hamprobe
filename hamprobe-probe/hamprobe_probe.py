@@ -24,6 +24,9 @@ import sys
 import time
 import urllib.parse
 
+if sys.version_info < (3, 3):
+	time.monotonic = time.time  # time() possibly has lower resolution, and is susceptible to system clock changes.
+
 # NETWORK STUFF
 
 ICMP_ECHO_REPLY = 0
@@ -158,7 +161,7 @@ class Test:
 		try:
 			result = self.func(self.logger, self.params)
 			self.logger.debug("succeeded, rescheduling")
-			self.sched_handle = self.probe.sched.enter(self.repeat, 0, self.run)
+			self.sched_handle = self.probe.sched.enter(self.repeat, 0, self.run, ())
 			self.probe.publish(self, result)
 		except Exception as ex:
 			self.logger.debug("failed, not rescheduling")

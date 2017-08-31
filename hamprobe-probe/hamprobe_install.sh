@@ -15,6 +15,7 @@ fi
 # Install latest master
 wget -O "/usr/local/bin/hamprobe_master.py" "http://api.hamprobe.net/assets/hamprobe_master.py"
 chmod 744 "/usr/local/bin/hamprobe_master.py"
+rm -f "/usr/local/bin/hamprobe_probe.py"
 
 # Don't overwrite existing config (updating config format should be handled in hamprobe_probe)
 if [ ! -f "/etc/hamprobe.conf" ]; then
