@@ -7,14 +7,12 @@ https://hamprobe.informatik.hs-augsburg.de
 __version__ = "0"
 
 import binascii
-import errno
 import hashlib
 import hmac
 import http.client
 import json
 import logging
 import logging.config
-import os
 import signal
 import socket
 import subprocess

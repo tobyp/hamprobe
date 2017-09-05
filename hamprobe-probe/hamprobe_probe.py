@@ -8,7 +8,7 @@ THIS SCRIPT SHOULD NOT BE CALLED MANUALLY, BUT BY hamprobe_master.py !!!'''
 __version__ = '%PROBE_VERSION%'
 
 import binascii
-import errno
+import distutils.spawn
 import hashlib
 import hmac
 import http.client
@@ -20,8 +20,10 @@ import sched
 import signal
 import socket
 import struct
+import subprocess
 import sys
 import time
+import traceback
 
 import urllib.parse
 
@@ -83,7 +85,7 @@ def traceroute(target, distance, timeout=5):
 
 	return trace
 
-# TESTS - the coordinator publishes a policy to each probe, telling it which tests to run, and how often.
+# TESTS
 
 def test_traceroute(probe, params):
 	c_targets = params['targets']
@@ -94,6 +96,35 @@ def test_traceroute(probe, params):
 	for target in c_targets:
 		results.append(traceroute(target, c_distance, c_timeout))
 	return results
+
+def test_iperf(probe, params):
+	iperf_executable = distutils.spawn.find_executable('iperf3')
+	if iperf_executable is None:
+		return
+	c_target = params['target']
+	command = [iperf_executable, '--client', c_target, '--json', '--udp']
+	if 'bandwidth' in params:
+		command.extend(('--bandwidth', params['bandwidth']))
+	if 'time' in params:
+		command.extend(('--time', params['time']))
+	iperf_proc = subprocess.Popen(command, stdout=subprocess.PIPE)
+	iperf_proc.wait()
+	result = json.loads(iperf_proc.stdout.read().decode('utf-8'))
+	if 'error' in result:
+		return {"error": result['error']}
+	measurement = {
+		'src': result['start']['connected'][0]['local_host'],
+		'dst': c_target,
+		't': result['start']['timestamp']['timesecs'],
+		'bits_per_second': float(result['end']['sum']['bits_per_second']),
+		'jitter_ms': float(result['end']['sum']['jitter_ms']),
+		'lost_percent' : float(result['end']['sum']['lost_percent']),
+		'packets' : result['end']['sum']['packets'],
+		'bytes' : result['end']['sum']['bytes'],
+		'lost_packets' : result['end']['sum']['lost_packets'],
+		'seconds' : float(result['end']['sum']['seconds']),
+	}
+	return measurement
 
 
 class APIError(Exception):
@@ -141,38 +172,50 @@ class API:
 
 
 class Test:
-	def __init__(self, probe, policy, index, config):
-		self.test = config["test"]
-		test_func_name = "test_" + self.test
-		if test_func_name not in globals():
-			raise RuntimeError("Test not found")
-		self.name = "{}.{}.{}".format(policy, index, self.test)
+	def __init__(self, probe, name, config):
 		self.probe = probe
-		self.policy = policy
-		self.index = index
-		self.func = globals()[test_func_name]
+		self.name = name
+		self.config = config
+		self.test = config['test']
+		self.func = globals()['test_' + self.test]
+		self.logger = probe.logger.getChild('test').getChild(self.test)
+		self.config = config
 		self.delay = int(config.get("delay", 0))
 		self.repeat = int(config.get("repeat", 60*60))
 		self.params = config.get("params", {})
-		self.logger = logging.getLogger('hamprobe.test.'+self.name)
-		self.sched_handle = None
+		self.handle = None
 
-	def cancel(self):
-		if self.sched_handle is not None:
-			self.probe.sched.cancel(self.sched_handle)
-			self.sched_handle = None
+	def schedule(self):
+		if self.handle is not None:
+			raise RuntimeError("Test already scheduled.")
+		self.handle = self.probe.sched.enter(self.delay, 0, self.run, ())
+		self.probe.tests.add(self)
 
 	def run(self):
-		self.logger.debug("starting")
 		try:
-			self.sched_handle = None
+			self.handle = None
 			result = self.func(self.logger, self.params)
-			self.logger.debug("succeeded, rescheduling")
-			self.sched_handle = self.probe.sched.enter(self.repeat, 0, self.run, ())
-			self.probe.publish(self, result)
-		except Exception as ex:
+		except Exception:
 			self.logger.debug("failed, not rescheduling")
-			self.probe.report_error(self, ex)
+			self.probe.tests.discard(self)
+			self.probe.report_error(self, sys.exc_info())
+		else:
+			self.logger.debug("succeeded, rescheduling")
+			self.probe.report_result(self, result)
+			self.handle = self.probe.sched.enter(self.repeat, 0, self.run, ())
+
+	def cancel(self):
+		if self.handle is None:
+			return
+		self.probe.sched.cancel(self.handle)
+		self.probe.tests.discard(self)
+		self.handle = None
+
+	def __hash__(self):
+		return id(self)
+
+	def __eq__(self, other):
+		return self is other
 
 
 class HAMprobe:
@@ -186,112 +229,123 @@ class HAMprobe:
 		self.interval_status_report = int(config.get("interval_status_report", 300))
 		self.interval_backlog_flush = int(config.get("interval_backlog_flush", 3600))
 		self.backlog_limit = int(config.get("backlog_limit", 1000))
-		self.sched.enter(0, 0, self.status_report, ())
-		self.sched.enter(self.interval_backlog_flush, 0, self.backlog_flush, ())
+		self.sched.enter(0, 0, self.task_status_report, ())
+		self.sched.enter(0, 0, self.task_backlog_flush, ())
 		self.backlog = []
 		# TODO load backlog from file
 
 	def exit(self):
-		self.logger.info("Termination requested, cancelling all tests and trying a backlog flush")
+		self.logger.info("Terminating: cancelling all tests and flushing backlog")
 		self.cancel_all_tests()
 		self.backlog_flush()
 		# TODO write remaining backlog to file
 
-	def cancel(self, test):
-		test.cancel()
-		self.tests.discard(test.sched_handle)
-
 	def cancel_all_tests(self):
-		for test in self.tests:
+		for test in set(self.tests):
 			test.cancel()
-		self.tests.clear()
 
 	def run(self):
 		self.sched.run()
 
-	def backlog_flush(self):
-		logger = self.logger.getChild('backlog')
-		if not self.backlog:
-			return
-
+	def task_status_report(self):
 		try:
-			self.logger.debug("Flushing backlog ({} entries)".format(len(self.backlog)))
-			while self.backlog:
-				request, payload = self.backlog.pop(0)
-				try:
-					self.api.request(request, payload)
-				except APIError:
-					self.backlog.insert(0, (request, payload))
-					self.logger.debug("Failed to flush backlog, trying again later")
-					break
+			self.status_report()
+		except Exception:
+			self.logger.log(logging.WARNING, "Failed to report status", exc_info=True)
 		finally:
-			self.sched.enter(self.interval_backlog_flush, 0, self.backlog_flush)
+			self.sched.enter(self.interval_status_report, 0, self.task_status_report, ())
 
-	def backlog_append(self, request, payload):
-		if len(self.backlog) > self.backlog_limit:
-			self.logger.debug("Backlog too long, culled one old entry")
-			self.backlog.pop(0)
-		self.backlog.append((request, payload))
-
-	def publish(self, test, result):
-		msg = {"test": test.test, "policy": test.policy, "index": test.index, "result": result}
+	def task_backlog_flush(self):
 		try:
-			self.api.request('publish', msg)
-		except APIError:
-			self.logger.warning("Failed to publish, backlogging")
-			self.backlog_append('publish', msg)
-
-	def report_error(self, test, error):
-		# use backlog for errors. Yes, this might drop some error messages, but if it comes to that, the errors will probably be repeating anyway.
-		msg = {"test": test.test, "policy": test.policy, "index": test.index, "error": str(error)}
-		try:
-			self.api.request('error', msg)
-		except APIError:
-			self.logger.warning("Failed to send error details, backlogging")
-			self.backlog_append('error', msg)
+			self.backlog_flush()
+		except Exception:
+			self.logger.log(logging.WARNING, "Error flushing backlog.", exc_info=True)
+		finally:
+			self.sched.enter(self.interval_backlog_flush, 0, self.task_backlog_flush, ())
 
 	def status_report(self):
 		logger = self.logger.getChild('status')
+		logger.debug("Reporting status")
 		try:
-			logger.debug("Reporting status")
 			response = self.api.request('status', {'policy': self.policy})
-
-			if response['script'] != __version__ and self.under_updater:
-				logger.info("New version available, requesting termination to update")
-				raise SystemExit()
-
-			if response['policy'] != self.policy:
-				self.update_policy()
-		except Exception:
-			logger.log(logging.WARNING, "Failed to report status", exc_info=True)
+		except APIError:
+			self.logger.debug("API error, trying again later.")
 			return
 
-		finally:
-			self.sched.enter(self.interval_status_report, 0, self.status_report, ())
+		# The status report went through, so we have a connection. Let's try to flush the backlog.
+		if self.backlog:
+			self.backlog_flush()
 
-	def update_policy(self):
+		if response['script'] != __version__ and self.under_updater:
+			logger.info("New version available")
+			raise SystemExit()
+
+		if response['policy'] != self.policy:
+			self.policy_update()
+
+	def policy_update(self):
 		logger = self.logger.getChild('policy')
 		try:
 			logger.debug("Fetching policy")
 			policy_resp = self.api.request('policy')
+			policy_id = policy_resp['id']
+			policy = policy_resp['policy']
 		except:
 			logger.log(logging.WARNING, "Failed to update policy", exc_info=True)
 			return
 
-		policy_id = policy_resp['id']
-		policy = policy_resp['policy']
 		self.cancel_all_tests()
-		for i, test_config in enumerate(policy.get('tests', [])):
+		for test_index, test_config in enumerate(policy.get('tests', [])):
+			test_name = "{}.{}.{}".format(policy_id, test_index, test_config.get('test', '<invalid>'))
 			try:
-				test = Test(self, policy_id, i, test_config)
-				test.sched_handle = self.sched.enter(test.delay, 0, test.run, ())
-				self.tests.add(test)
-				logger.debug("Scheduled test {!r} in {} s, repeating every {} s".format(test.name, test.delay, test.repeat))
+				test = Test(self, test_name, test_config)
+				test.schedule()
 			except:
-				logger.exception("Failed to schedule task {}".format(test_config['test']))
+				logger.exception("Failed to schedule test {}".format(test_name))
+
 		if self.policy != policy_id:
 			logger.info("Policy is now {!r}".format(policy_id))
 		self.policy = policy_id
+
+	def report_result(self, test, result):
+		msg = {"test": test.test, "name": test.name, "result": result}
+		try:
+			self.api.request('publish', msg)
+		except APIError:
+			self.logger.warning("Failed to report test results, backlogging")
+			self.backlog_append('publish', msg)
+
+	def report_error(self, test, exc_info):
+		# use backlog for errors. Yes, this might drop some error messages, but if it comes to that, the errors will probably be repeating anyway.
+		msg = {"test": test.test, "name": test.name, "error": traceback.format_exception(*exc_info)}
+		try:
+			self.api.request('error', msg)
+		except APIError:
+			self.logger.warning("Failed to report error details, backlogging")
+			self.backlog_append('error', msg)
+
+	def backlog_flush(self):
+		if not self.backlog:
+			return
+
+		logger = self.logger.getChild('backlog')
+		logger.debug("Attempting to flush {} entries".format(len(self.backlog)))
+		while self.backlog:
+			request, payload = self.backlog.pop(0)
+			try:
+				self.api.request(request, payload)
+			except APIError:
+				self.backlog.insert(0, (request, payload))
+				logger.debug("API error, trying again later.")
+				break
+
+	def backlog_append(self, request, payload):
+		logger = self.logger.getChild('backlog')
+		if len(self.backlog) > self.backlog_limit:
+			logger.debug("Backlog too long, culled one old entry")
+			self.backlog.pop(0)
+		self.backlog.append((request, payload))
+
 
 def main():
 	def signal_exit(signal, frame):
@@ -309,14 +363,14 @@ def main():
 	with open(args.config, 'r') as f:
 		config = json.load(f)
 
-	#HERE: upgrade config if necessary
-
 	logging.config.dictConfig(config["logging"])
 	logger = logging.getLogger('hamprobe')
 	logger.info("HAMprobe version {!r}, configuration file {!r}".format(__version__, args.config))
 
 	if config["hamprobe"]["key"] == '%PROBE_KEY%' or config["hamprobe"]["id"] == '%PROBE_ID%':
 		raise RuntimeError("Configuration still has placeholder PROBE_ID and PROBE_KEY. Please download hamprobe.py from https://hamprobe.informatik.hs-augsburg.de/hamprobe.py (The file will include a unique key), and run that to regenerate the config.")
+
+	#HERE: upgrade config if necessary
 
 	probe = HAMprobe(config)
 	try:

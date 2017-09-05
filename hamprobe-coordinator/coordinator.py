@@ -109,6 +109,27 @@ def publish(data):
 						p['tags']['icmp_code'] = hop['icmp'][1]
 					points.append(p)
 		influx.write_points(points)
+	elif data['test'] == 'iperf':
+		if "error" in result:
+			logger.getChild("iperf").warning("Error from {}/{}: {}".format(g.probe.id, request.remote_addr, result["error"]))
+			return
+		p = {
+			"measurement": "iperf",
+			"tags": {
+				"from": result['src'],
+				"to": result['dst'],
+			},
+			"time": datetime.datetime.fromtimestamp(result['t'], datetime.timezone.utc).isoformat(),
+			"fields": {
+				"bps": result['bits_per_second'],
+				"jitter": result['jitter_ms'],
+				"loss": result['lost_percent'],
+				"packets": result['packets'],
+				"bytes": result['bytes'],
+				"packets_lost": result['lost_packets'],
+				"duration": result['seconds']
+			}}
+		influx.write_points([p])
 	else:
 		print(data)
 
