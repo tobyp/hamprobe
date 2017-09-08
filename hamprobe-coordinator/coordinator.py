@@ -125,7 +125,7 @@ def publish(data):
 				}
 			if result['start']['test_start']['protocol'] == 'TCP':
 				m['fields'] = {
-					"send_duration" float(result['end']['sum_sent']['seconds']),
+					"send_duration": float(result['end']['sum_sent']['seconds']),
 					"recv_duration": float(result['end']['sum_received']['seconds']),
 					"send_bps": float(result['end']['sum_sent']['bits_per_second']),
 					"recv_bps": float(result['end']['sum_received']['bits_per_second']),
