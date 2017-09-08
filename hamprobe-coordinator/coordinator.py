@@ -113,23 +113,41 @@ def publish(data):
 		if "error" in result:
 			logger.getChild("iperf").warning("Error from {}/{}: {}".format(g.probe.id, request.remote_addr, result["error"]))
 			return
-		p = {
-			"measurement": "iperf",
-			"tags": {
-				"from": result['src'],
-				"to": result['dst'],
-			},
-			"time": datetime.datetime.fromtimestamp(result['t'], datetime.timezone.utc).isoformat(),
-			"fields": {
-				"bps": result['bits_per_second'],
-				"jitter": result['jitter_ms'],
-				"loss": result['lost_percent'],
-				"packets": result['packets'],
-				"bytes": result['bytes'],
-				"packets_lost": result['lost_packets'],
-				"duration": result['seconds']
-			}}
-		influx.write_points([p])
+		try:
+			m = {
+					"measurement": "iperf",
+					"time": datetime.datetime.fromtimestamp(result['start']['timestamp']['timesecs'], datetime.timezone.utc).isoformat(),
+					"tags": {
+						"protocol": result['start']['test_start']['protocol'],
+						"from": result['start']['connected'][0]['local_host'],
+						"to": result['start']['connected'][0]['remote_host'],
+					},
+				}
+			if result['start']['test_start']['protocol'] == 'TCP':
+				m['fields'] = {
+					"send_duration" float(result['end']['sum_sent']['seconds']),
+					"recv_duration": float(result['end']['sum_received']['seconds']),
+					"send_bps": float(result['end']['sum_sent']['bits_per_second']),
+					"recv_bps": float(result['end']['sum_received']['bits_per_second']),
+					"send_bytes": int(result['end']['sum_sent']['bytes']),
+					"recv_bytes": int(result['end']['sum_received']['bytes']),
+					"send_retransmits": int(result['end']['sum_sent']['retransmits']),
+				}
+			elif result['start']['test_start']['protocol'] == 'UDP':
+				m['fields'] = {
+					"bps": float(result['end']['sum']['bits_per_second']),
+					"jitter": float(result['end']['sum']['jitter_ms']),
+					"loss": float(result['end']['sum']['lost_percent']),
+					"packets": result['end']['sum']['packets'],
+					"bytes": result['end']['sum']['bytes'],
+					"packets_lost": result['end']['sum']['lost_packets'],
+					"duration": float(result['end']['sum']['seconds']),
+				}
+			else:
+				raise ValueError("unknown protocol")
+			influx.write_points([p])
+		except:
+			logger.exception("Failed to process iperf results.")
 	else:
 		print(data)
 

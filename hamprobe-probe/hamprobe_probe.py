@@ -105,7 +105,7 @@ def test_iperf(probe, params):
 	mode = '--udp'
 	if params.get('mode') == 'tcp':
 		mode = '--tcp'
-	command = [iperf_executable, '--client', c_target, '--json', mode]
+	command = [iperf_executable, '--clent', c_target, '--json', mode]
 	if 'bandwidth' in params:
 		command.extend(('--bandwidth', str(params['bandwidth'])))
 	if 'time' in params:
@@ -115,19 +115,7 @@ def test_iperf(probe, params):
 	result = json.loads(iperf_proc.stdout.read().decode('utf-8'))
 	if 'error' in result:
 		return {"error": result['error']}
-	measurement = {
-		'src': result['start']['connected'][0]['local_host'],
-		'dst': c_target,
-		't': result['start']['timestamp']['timesecs'],
-		'bits_per_second': float(result['end']['sum']['bits_per_second']),
-		'jitter_ms': float(result['end']['sum']['jitter_ms']),
-		'lost_percent' : float(result['end']['sum']['lost_percent']),
-		'packets' : result['end']['sum']['packets'],
-		'bytes' : result['end']['sum']['bytes'],
-		'lost_packets' : result['end']['sum']['lost_packets'],
-		'seconds' : float(result['end']['sum']['seconds']),
-	}
-	return measurement
+	return {"start": result["start"], "end": result['end']}
 
 
 class APIError(Exception):
