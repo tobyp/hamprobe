@@ -104,7 +104,7 @@ def test_iperf(probe, params):
 	c_target = params['target']
 	command = [iperf_executable, '--client', c_target, '--json']
 	mode = params.get('mode', 'tcp')
-	if mode in == 'udp':
+	if mode == 'udp':
 		command.append('--udp')
 	elif mode == 'tcp':
 		pass
