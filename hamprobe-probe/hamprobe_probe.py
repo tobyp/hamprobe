@@ -102,10 +102,12 @@ def test_iperf(probe, params):
 	if iperf_executable is None:
 		return
 	c_target = params['target']
-	mode = '--udp'
-	if params.get('mode') == 'tcp':
-		mode = '--tcp'
 	command = [iperf_executable, '--clent', c_target, '--json', mode]
+	mode = params.get('mode')
+	if mode in ['udp']:
+		command.append('--udp')
+	elif mode is not None:
+		raise ValueError("Unknown mode")
 	if 'bandwidth' in params:
 		command.extend(('--bandwidth', str(params['bandwidth'])))
 	if 'time' in params:
