@@ -102,7 +102,7 @@ def test_iperf(probe, params):
 	if iperf_executable is None:
 		return
 	c_target = params['target']
-	command = [iperf_executable, '--clent', c_target, '--json', mode]
+	command = [iperf_executable, '--clent', c_target, '--json']
 	mode = params.get('mode')
 	if mode in ['udp']:
 		command.append('--udp')
