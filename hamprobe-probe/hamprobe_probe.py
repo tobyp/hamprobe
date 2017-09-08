@@ -104,9 +104,9 @@ def test_iperf(probe, params):
 	c_target = params['target']
 	command = [iperf_executable, '--client', c_target, '--json', '--udp']
 	if 'bandwidth' in params:
-		command.extend(('--bandwidth', params['bandwidth']))
+		command.extend(('--bandwidth', str(params['bandwidth'])))
 	if 'time' in params:
-		command.extend(('--time', params['time']))
+		command.extend(('--time', str(params['time'])))
 	iperf_proc = subprocess.Popen(command, stdout=subprocess.PIPE)
 	iperf_proc.wait()
 	result = json.loads(iperf_proc.stdout.read().decode('utf-8'))
